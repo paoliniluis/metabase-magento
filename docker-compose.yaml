@@ -1,0 +1,73 @@
+services:
+  metabase:
+    image: metabase/metabase:v0.46.4
+    hostname: metabase
+    networks:
+      - magento-metabase
+    ports:
+      - 3000:3000
+  setup:
+    image: bash:5.1.16
+    container_name: setup
+    volumes:
+      - $PWD/setup:/tmp
+    networks:
+      - magento-metabase
+    command: sh /tmp/metabase-setup.sh metabase:3000
+    cpus: 1
+    mem_limit: 32mb
+  mariadb:
+    image: mariadb:10.6
+    hostname: mariadb
+    environment:
+      - MARIADB_ROOT_PASSWORD=mysecretpassword
+      - MARIADB_USER=metabase
+      - MARIADB_PASSWORD=mysecretpassword
+      - MARIADB_DATABASE=metabase
+    networks:
+      - magento-metabase
+    volumes:
+      - ${PWD}/mariadb-config/healthcheck.cnf:/etc/mysql/healthcheck.cnf
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/local/bin/healthcheck.sh --defaults-file=/etc/mysql/healthcheck.cnf --connect"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 5s
+  magento:
+    image: bitnami/magento:2.4.6
+    hostname: magento
+    environment:
+      - MAGENTO_DATABASE_USER=metabase
+      - MAGENTO_DATABASE_PASSWORD=mysecretpassword
+      - MAGENTO_DATABASE_NAME=metabase
+      - MAGENTO_DATABASE_HOST=mariadb
+      - MAGENTO_MODE=developer
+      - MAGENTO_USERNAME=user
+      - MAGENTO_PASSWORD=bitnami1
+      - MAGENTO_EMAIL=user@example.com
+      - MAGENTO_FIRST_NAME=FirstName
+      - MAGENTO_LAST_NAME=LastName
+      - MAGENTO_ELASTICSEARCH_HOST=elasticsearch
+      - BITNAMI_DEBUG=true
+      - MAGENTO_EXTERNAL_HTTP_PORT_NUMBER=8080
+    networks:
+      - magento-metabase
+    ports:
+      - 8080:8080
+    depends_on:
+      mariadb:
+        condition: service_healthy
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.8
+    container_name: elasticsearch
+    hostname: elasticsearch
+    networks: 
+      - magento-metabase
+    cpus: 2
+    mem_limit: 512m
+    environment:
+      - discovery.type=single-node
+networks:
+  magento-metabase:
+    driver: bridge
